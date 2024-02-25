@@ -1,5 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
 using AOT;
 using TMPro;
 using UnityEngine;
@@ -7,6 +9,8 @@ using UnityEngine.UI;
 
 public class LlamaTest : MonoBehaviour
 {
+    private static LlamaTest _instance;
+    
 #if UNITY_EDITOR_OSX
     private const string kLibName = "libllamacpp-wrapper";
 #else
@@ -20,7 +24,7 @@ public class LlamaTest : MonoBehaviour
     private static extern IntPtr create_instance(string path);
 
     [DllImport(kLibName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr llama_complete(IntPtr instance, string text, IntPtr completion);
+    private static extern void llama_complete(IntPtr instance, string text, IntPtr completion);
 
     [MonoPInvokeCallback(typeof(Action<string>))]
     public static void OnNativeCallback(string result)
@@ -35,26 +39,19 @@ public class LlamaTest : MonoBehaviour
 
     private CompletionCallback _completionCallback;
     private GCHandle _gcHandle;
-    private IntPtr _instance;
+    private IntPtr _llamaInstance;
 
     private bool _hasResult = false;
     private IntPtr _resultPtr;
 
     private void Start()
     {
+        _instance = this;
+        
         string filepath = $"{Application.streamingAssetsPath}/{_modelFilePath}";
-        _instance = create_instance(filepath);
+        _llamaInstance = create_instance(filepath);
 
-        _sendButton.onClick.AddListener(() =>
-        {
-            _completionCallback = StaticCallback;
-            IntPtr completionPtr = Marshal.GetFunctionPointerForDelegate(_completionCallback);
-            _gcHandle = GCHandle.Alloc(_completionCallback);
-
-            IntPtr resultPtr = llama_complete(_instance, _prompt.text, completionPtr);
-            string result = Marshal.PtrToStringAnsi(resultPtr);
-            Debug.Log(result);
-        });
+        _sendButton.onClick.AddListener(StartPredict);
     }
 
     private void Update()
@@ -65,6 +62,24 @@ public class LlamaTest : MonoBehaviour
         }
     }
 
+    private void StartPredict()
+    {
+        Debug.Log($"1: {Thread.CurrentThread.ManagedThreadId}");
+
+        Task.Run(Predict);
+    }
+
+    private void Predict()
+    {
+        Debug.Log($"2: {Thread.CurrentThread.ManagedThreadId}");
+
+        _completionCallback = StaticCallback;
+        IntPtr completionPtr = Marshal.GetFunctionPointerForDelegate(_completionCallback);
+        _gcHandle = GCHandle.Alloc(_completionCallback);
+
+        llama_complete(_llamaInstance, _prompt.text, completionPtr);
+    }
+
     private void ShowResult()
     {
         _hasResult = false;
@@ -72,7 +87,7 @@ public class LlamaTest : MonoBehaviour
         if (_resultPtr == IntPtr.Zero) return;
 
         string result = Marshal.PtrToStringAnsi(_resultPtr);
-        
+
         Debug.Log(result);
 
         _result.text = result;
@@ -89,11 +104,10 @@ public class LlamaTest : MonoBehaviour
         _hasResult = true;
         _resultPtr = resultPtr;
     }
-    
+
     [MonoPInvokeCallback(typeof(CompletionCallback))]
     private static void StaticCallback(IntPtr resultPtr)
     {
-        string result = Marshal.PtrToStringAnsi(resultPtr);
-        Debug.Log(result);
+        _instance.Callback(resultPtr);
     }
 }
