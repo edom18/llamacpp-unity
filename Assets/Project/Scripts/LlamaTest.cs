@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using AOT;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -13,7 +14,7 @@ public class LlamaTest : MonoBehaviour
 #endif
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private delegate void CompletionCallback(int result);
+    private delegate void CompletionCallback(IntPtr resultPtr);
 
     [DllImport(kLibName, CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr create_instance(string path);
@@ -21,10 +22,13 @@ public class LlamaTest : MonoBehaviour
     [DllImport(kLibName, CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr llama_complete(IntPtr instance, string text, IntPtr completion);
 
-    [DllImport(kLibName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern int llama_test(IntPtr instance, string text, IntPtr completion);
+    [MonoPInvokeCallback(typeof(Action<string>))]
+    public static void OnNativeCallback(string result)
+    {
+        Debug.Log(result);
+    }
 
-    [SerializeField] private string _modelFilePath = "Models/llama-2-7b-chat.Q4_K_M.gguf";
+    [SerializeField] private string _modelFilePath = "models/llama-2-7b-chat.Q4_K_M.gguf";
     [SerializeField] private TMP_Text _result;
     [SerializeField] private TMP_InputField _prompt;
     [SerializeField] private Button _sendButton;
@@ -34,7 +38,7 @@ public class LlamaTest : MonoBehaviour
     private IntPtr _instance;
 
     private bool _hasResult = false;
-    private int _resultValue;
+    private IntPtr _resultPtr;
 
     private void Start()
     {
@@ -43,13 +47,12 @@ public class LlamaTest : MonoBehaviour
 
         _sendButton.onClick.AddListener(() =>
         {
-            _completionCallback = Callback;
+            _completionCallback = StaticCallback;
             IntPtr completionPtr = Marshal.GetFunctionPointerForDelegate(_completionCallback);
             _gcHandle = GCHandle.Alloc(_completionCallback);
 
             IntPtr resultPtr = llama_complete(_instance, _prompt.text, completionPtr);
             string result = Marshal.PtrToStringAnsi(resultPtr);
-            // int result = llama_test(wrapperPtr, _prompt.text, completionPtr);
             Debug.Log(result);
         });
     }
@@ -65,19 +68,32 @@ public class LlamaTest : MonoBehaviour
     private void ShowResult()
     {
         _hasResult = false;
+
+        if (_resultPtr == IntPtr.Zero) return;
+
+        string result = Marshal.PtrToStringAnsi(_resultPtr);
         
-        Debug.Log(_resultValue);
+        Debug.Log(result);
 
-        _result.text = _resultValue.ToString();
+        _result.text = result;
 
-        _resultValue = 0;
+        Marshal.FreeHGlobal(_resultPtr);
+
+        _resultPtr = IntPtr.Zero;
 
         _gcHandle.Free();
     }
 
-    private void Callback(int result)
+    private void Callback(IntPtr resultPtr)
     {
         _hasResult = true;
-        _resultValue = result;
+        _resultPtr = resultPtr;
+    }
+    
+    [MonoPInvokeCallback(typeof(CompletionCallback))]
+    private static void StaticCallback(IntPtr resultPtr)
+    {
+        string result = Marshal.PtrToStringAnsi(resultPtr);
+        Debug.Log(result);
     }
 }
