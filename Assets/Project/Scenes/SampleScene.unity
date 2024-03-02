@@ -1767,7 +1767,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 303c5a4cf8a7545a8ac83307dd79ced5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _modelFilePath: models/llama-2-7b-chat.Q4_K_M.gguf
+  _modelFilePath: models/tinyllama-1.1b-1t-openorca.Q4_0.gguf
   _result: {fileID: 1244884853}
   _prompt: {fileID: 1882562787}
   _sendButton: {fileID: 532725433}
